@@ -17,3 +17,7 @@ def test_sub():
 
 if __name__ == '__main__':
     print(m.add(2, 3))
+    m.init()
+    print(m.cuda_driver_version())
+    print(m.cuda_toolkit_version())
+    print(m.cuda_device_get_name(0))
