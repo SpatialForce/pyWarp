@@ -1,5 +1,21 @@
+import ast
+import ctypes
+import hashlib
 import os
 import sys
+from typing import Any, Mapping
+
+import warp_runtime_py as wp
+
+from warp import config, build
+from warp.codegen.codegen import codegen_struct, codegen_kernel, codegen_module, codegen_snippet, codegen_func, \
+    cuda_module_header, cpu_module_header
+from warp.codegen.struct import Struct
+from warp.context import get_device, is_cpu_available, is_cuda_available, runtime
+from warp.dsl.types import array, get_signature, _constant_hash
+from warp.function import Function
+from warp.kernel import KernelHooks
+from warp.utils.scoped_timer import ScopedTimer
 
 # global dictionary of modules
 user_modules = {}
@@ -41,7 +57,7 @@ def get_module(name):
 
     else:
         # else Warp module didn't exist yet, so create a new one
-        user_modules[name] = warp.context.Module(name, parent_loader)
+        user_modules[name] = Module(name, parent_loader)
         return user_modules[name]
 
 
@@ -67,7 +83,7 @@ class ModuleBuilder:
                 for k in kernel.overloads.values():
                     self.build_kernel(k)
 
-    def build_struct_recursive(self, struct: warp.codegen.Struct):
+    def build_struct_recursive(self, struct: Struct):
         structs = []
 
         stack = [struct]
@@ -77,9 +93,9 @@ class ModuleBuilder:
             structs.append(s)
 
             for var in s.vars.values():
-                if isinstance(var.type, warp.codegen.Struct):
+                if isinstance(var.type, Struct):
                     stack.append(var.type)
-                elif isinstance(var.type, warp.types.array) and isinstance(var.type.dtype, warp.codegen.Struct):
+                elif isinstance(var.type, array) and isinstance(var.type.dtype, Struct):
                     stack.append(var.type.dtype)
 
         # Build them in reverse to generate a correct dependency order.
@@ -126,34 +142,34 @@ class ModuleBuilder:
 
         # code-gen structs
         for struct in self.structs.keys():
-            source += warp.codegen.codegen_struct(struct)
+            source += codegen_struct(struct)
 
         # code-gen all imported functions
         for func in self.functions.keys():
             if func.native_snippet is None:
-                source += warp.codegen.codegen_func(
+                source += codegen_func(
                     func.adj, c_func_name=func.native_func, device=device, options=self.options
                 )
             else:
-                source += warp.codegen.codegen_snippet(
+                source += codegen_snippet(
                     func.adj, name=func.key, snippet=func.native_snippet, adj_snippet=func.adj_native_snippet
                 )
 
         for kernel in self.module.kernels.values():
             # each kernel gets an entry point in the module
             if not kernel.is_generic:
-                source += warp.codegen.codegen_kernel(kernel, device=device, options=self.options)
-                source += warp.codegen.codegen_module(kernel, device=device)
+                source += codegen_kernel(kernel, device=device, options=self.options)
+                source += codegen_module(kernel, device=device)
             else:
                 for k in kernel.overloads.values():
-                    source += warp.codegen.codegen_kernel(k, device=device, options=self.options)
-                    source += warp.codegen.codegen_module(k, device=device)
+                    source += codegen_kernel(k, device=device, options=self.options)
+                    source += codegen_module(k, device=device)
 
         # add headers
         if device == "cpu":
-            source = warp.codegen.cpu_module_header + source
+            source = cpu_module_header + source
         else:
-            source = warp.codegen.cuda_module_header + source
+            source = cuda_module_header + source
 
         return source
 
@@ -182,10 +198,10 @@ class Module:
 
         self.options = {
             "max_unroll": 16,
-            "enable_backward": warp.config.enable_backward,
+            "enable_backward": config.enable_backward,
             "fast_math": False,
             "cuda_output": None,  # supported values: "ptx", "cubin", or None (automatic)
-            "mode": warp.config.mode,
+            "mode": config.mode,
         }
 
         # kernel hook lookup per device
@@ -243,12 +259,12 @@ class Module:
             # already been registered. If so, then we simply override it, as
             # Python would do it, otherwise we register it as a new overload.
             func_existing = self.functions[func.key]
-            sig = warp.types.get_signature(
+            sig = get_signature(
                 func.input_types.values(),
                 func_name=func.key,
                 arg_names=list(func.input_types.keys()),
             )
-            sig_existing = warp.types.get_signature(
+            sig_existing = get_signature(
                 func_existing.input_types.values(),
                 func_name=func_existing.key,
                 arg_names=list(func_existing.input_types.keys()),
@@ -284,7 +300,7 @@ class Module:
                     func, _ = adj.resolve_static_expression(node.func, eval_types=False)
 
                     # if this is a user-defined function, add a module reference
-                    if isinstance(func, warp.context.Function) and func.module is not None:
+                    if isinstance(func, Function) and func.module is not None:
                         add_ref(func.module)
 
                 except Exception:
@@ -295,20 +311,21 @@ class Module:
 
         # scan for structs
         for arg in adj.args:
-            if isinstance(arg.type, warp.codegen.Struct) and arg.type.module is not None:
+            if isinstance(arg.type, Struct) and arg.type.module is not None:
                 add_ref(arg.type.module)
 
     def hash_module(self):
         def get_annotations(obj: Any) -> Mapping[str, Any]:
             """Alternative to `inspect.get_annotations()` for Python 3.9 and older."""
-            # See https://docs.python.org/3/howto/annotations.html#accessing-the-annotations-dict-of-an-object-in-python-3-9-and-older
+            # See https://docs.python.org/3/howto/annotations.html#accessing-the-annotations-dict-of-an-object-in
+            # -python-3-9-and-older
             if isinstance(obj, type):
                 return obj.__dict__.get("__annotations__", {})
 
             return getattr(obj, "__annotations__", {})
 
         def get_type_name(type_hint):
-            if isinstance(type_hint, warp.codegen.Struct):
+            if isinstance(type_hint, Struct):
                 return get_type_name(type_hint.cls)
             return type_hint
 
@@ -371,14 +388,14 @@ class Module:
                 h.update(bytes(s, "utf-8"))
 
             # ensure to trigger recompilation if flags affecting kernel compilation are changed
-            if warp.config.verify_fp:
+            if config.verify_fp:
                 h.update(bytes("verify_fp", "utf-8"))
 
-            h.update(bytes(warp.config.mode, "utf-8"))
+            h.update(bytes(config.mode, "utf-8"))
 
             # compile-time constants (global)
-            if warp.types._constant_hash:
-                h.update(warp.types._constant_hash.digest())
+            if _constant_hash:
+                h.update(_constant_hash.digest())
 
             # recurse on references
             visited.add(module)
@@ -394,8 +411,6 @@ class Module:
         return hash_recursive(self, visited=set())
 
     def load(self, device):
-        from warp.utils import ScopedTimer
-
         device = get_device(device)
 
         if device.is_cpu:
@@ -405,7 +420,7 @@ class Module:
             # avoid repeated build attempts
             if self.cpu_build_failed:
                 return False
-            if not warp.is_cpu_available():
+            if not is_cpu_available():
                 raise RuntimeError("Failed to build CPU module because no CPU buildchain was found")
         else:
             # check if already loaded
@@ -414,12 +429,12 @@ class Module:
             # avoid repeated build attempts
             if self.cuda_build_failed:
                 return False
-            if not warp.is_cuda_available():
+            if not is_cuda_available():
                 raise RuntimeError("Failed to build CUDA module because CUDA is not available")
 
-        with ScopedTimer(f"Module {self.name} load on device '{device}'", active=not warp.config.quiet):
-            build_path = warp.build.kernel_bin_dir
-            gen_path = warp.build.kernel_gen_dir
+        with ScopedTimer(f"Module {self.name} load on device '{device}'", active=not config.quiet):
+            build_path = build.kernel_bin_dir
+            gen_path = build.kernel_gen_dir
 
             if not os.path.exists(build_path):
                 os.makedirs(build_path)
@@ -438,7 +453,7 @@ class Module:
                 cpu_hash_path = module_path + ".cpu.hash"
 
                 # check cache
-                if warp.config.cache_kernels and os.path.isfile(cpu_hash_path) and os.path.isfile(obj_path):
+                if config.cache_kernels and os.path.isfile(cpu_hash_path) and os.path.isfile(obj_path):
                     with open(cpu_hash_path, "rb") as f:
                         cache_hash = f.read()
 
@@ -459,13 +474,13 @@ class Module:
                     cpp_file.close()
 
                     # build object code
-                    with ScopedTimer("Compile x86", active=warp.config.verbose):
-                        warp.build.build_cpu(
+                    with ScopedTimer("Compile x86", active=config.verbose):
+                        build.build_cpu(
                             obj_path,
                             cpp_path,
                             mode=self.options["mode"],
                             fast_math=self.options["fast_math"],
-                            verify_fp=warp.config.verify_fp,
+                            verify_fp=config.verify_fp,
                         )
 
                     # update cpu hash
@@ -484,7 +499,7 @@ class Module:
                 # determine whether to use PTX or CUBIN
                 if device.is_cubin_supported:
                     # get user preference specified either per module or globally
-                    preferred_cuda_output = self.options.get("cuda_output") or warp.config.cuda_output
+                    preferred_cuda_output = self.options.get("cuda_output") or config.cuda_output
                     if preferred_cuda_output is not None:
                         use_ptx = preferred_cuda_output == "ptx"
                     else:
@@ -496,7 +511,7 @@ class Module:
                     use_ptx = True
 
                 if use_ptx:
-                    output_arch = min(device.arch, warp.config.ptx_target_arch)
+                    output_arch = min(device.arch, config.ptx_target_arch)
                     output_path = module_path + f".sm{output_arch}.ptx"
                 else:
                     output_arch = device.arch
@@ -505,12 +520,12 @@ class Module:
                 cuda_hash_path = module_path + f".sm{output_arch}.hash"
 
                 # check cache
-                if warp.config.cache_kernels and os.path.isfile(cuda_hash_path) and os.path.isfile(output_path):
+                if config.cache_kernels and os.path.isfile(cuda_hash_path) and os.path.isfile(output_path):
                     with open(cuda_hash_path, "rb") as f:
                         cache_hash = f.read()
 
                     if cache_hash == module_hash:
-                        cuda_module = warp.build.load_cuda(output_path, device)
+                        cuda_module = build.load_cuda(output_path, device)
                         if cuda_module is not None:
                             self.cuda_modules[device.context] = cuda_module
                             return True
@@ -527,14 +542,14 @@ class Module:
                     cu_file.close()
 
                     # generate PTX or CUBIN
-                    with ScopedTimer("Compile CUDA", active=warp.config.verbose):
-                        warp.build.build_cuda(
+                    with ScopedTimer("Compile CUDA", active=config.verbose):
+                        build.build_cuda(
                             cu_path,
                             output_arch,
                             output_path,
                             config=self.options["mode"],
                             fast_math=self.options["fast_math"],
-                            verify_fp=warp.config.verify_fp,
+                            verify_fp=config.verify_fp,
                         )
 
                     # update cuda hash
@@ -542,7 +557,7 @@ class Module:
                         f.write(module_hash)
 
                     # load the module
-                    cuda_module = warp.build.load_cuda(output_path, device)
+                    cuda_module = build.load_cuda(output_path, device)
                     if cuda_module is not None:
                         self.cuda_modules[device.context] = cuda_module
                     else:
@@ -562,10 +577,10 @@ class Module:
         # need to unload the CUDA module from all CUDA contexts where it is loaded
         # note: we ensure that this doesn't change the current CUDA context
         if self.cuda_modules:
-            saved_context = runtime.core.cuda_context_get_current()
+            saved_context = wp.cuda_context_get_current()
             for context, module in self.cuda_modules.items():
-                runtime.core.cuda_unload_module(context, module)
-            runtime.core.cuda_context_set_current(saved_context)
+                wp.cuda_unload_module(context, module)
+            wp.cuda_context_set_current(saved_context)
             self.cuda_modules = {}
 
         # clear kernel hooks
@@ -598,10 +613,10 @@ class Module:
             )
         else:
             cu_module = self.cuda_modules[device.context]
-            forward = runtime.core.cuda_get_kernel(
+            forward = wp.cuda_get_kernel(
                 device.context, cu_module, (name + "_cuda_kernel_forward").encode("utf-8")
             )
-            backward = runtime.core.cuda_get_kernel(
+            backward = wp.cuda_get_kernel(
                 device.context, cu_module, (name + "_cuda_kernel_backward").encode("utf-8")
             )
 

@@ -1967,11 +1967,11 @@ class array(Array):
             carr_ptr = ctypes.pointer(carr)
 
             if self.device.is_cuda:
-                warp.context.runtime.core.array_fill_device(
+                wp.array_fill_device(
                     self.device.context, carr_ptr, ARRAY_TYPE_REGULAR, cvalue_ptr, cvalue_size
                 )
             else:
-                warp.context.runtime.core.array_fill_host(carr_ptr, ARRAY_TYPE_REGULAR, cvalue_ptr, cvalue_size)
+                wp.array_fill_host(carr_ptr, ARRAY_TYPE_REGULAR, cvalue_ptr, cvalue_size)
 
     def assign(self, src):
         """Wraps ``src`` in an :class:`warp.array` if it is not already one and copies the contents to ``self``."""
@@ -2342,11 +2342,11 @@ class noncontiguous_array_base(Generic[T]):
         ctype_ptr = ctypes.pointer(ctype)
 
         if self.device.is_cuda:
-            warp.context.runtime.core.array_fill_device(
+            wp.array_fill_device(
                 self.device.context, ctype_ptr, self.type_id, cvalue_ptr, cvalue_size
             )
         else:
-            warp.context.runtime.core.array_fill_host(ctype_ptr, self.type_id, cvalue_ptr, cvalue_size)
+            wp.array_fill_host(ctype_ptr, self.type_id, cvalue_ptr, cvalue_size)
 
 
 # helper to check index array properties

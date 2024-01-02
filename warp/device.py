@@ -5,6 +5,7 @@ from warp.allocator import Allocator
 from warp.context_guard import ContextGuard
 from warp.stream import Stream
 from warp.utils.logging import warn
+import warp_runtime_py as wp
 
 
 class Device:
@@ -40,17 +41,17 @@ class Device:
             self.is_mempool_supported = False
 
             # TODO: add more device-specific dispatch functions
-            self.memset = runtime.core.memset_host
-            self.memtile = runtime.core.memtile_host
+            self.memset = wp.memset_host
+            self.memtile = wp.memtile_host
 
-        elif ordinal >= 0 and ordinal < runtime.core.cuda_device_get_count():
+        elif ordinal >= 0 and ordinal < wp.cuda_device_get_count():
             # CUDA device
-            self.name = runtime.core.cuda_device_get_name(ordinal).decode()
-            self.arch = runtime.core.cuda_device_get_arch(ordinal)
-            self.is_uva = runtime.core.cuda_device_is_uva(ordinal)
+            self.name = wp.cuda_device_get_name(ordinal).decode()
+            self.arch = wp.cuda_device_get_arch(ordinal)
+            self.is_uva = wp.cuda_device_is_uva(ordinal)
             # check whether our NVRTC can generate CUBINs for this architecture
             self.is_cubin_supported = self.arch in runtime.nvrtc_supported_archs
-            self.is_mempool_supported = runtime.core.cuda_device_is_memory_pool_supported(ordinal)
+            self.is_mempool_supported = wp.cuda_device_is_memory_pool_supported(ordinal)
 
             # Warn the user of a possible misconfiguration of their system
             if not self.is_mempool_supported:
@@ -65,8 +66,8 @@ class Device:
                 self.init_streams()
 
             # TODO: add more device-specific dispatch functions
-            self.memset = lambda ptr, value, size: runtime.core.memset_device(self.context, ptr, value, size)
-            self.memtile = lambda ptr, src, srcsize, reps: runtime.core.memtile_device(
+            self.memset = lambda ptr, value, size: wp.memset_device(self.context, ptr, value, size)
+            self.memtile = lambda ptr, src, srcsize, reps: wp.memtile_device(
                 self.context, ptr, src, srcsize, reps
             )
 
@@ -94,7 +95,7 @@ class Device:
             return self._context
         elif self.is_primary:
             # acquire primary context on demand
-            self._context = self.runtime.core.cuda_device_primary_context_retain(self.ordinal)
+            self._context = wp.cuda_device_primary_context_retain(self.ordinal)
             if self._context is None:
                 raise RuntimeError(f"Failed to acquire primary context for device {self}")
             self.runtime.context_map[self._context] = self
@@ -119,7 +120,7 @@ class Device:
             if s.device != self:
                 raise RuntimeError(f"Stream from device {s.device} cannot be used on device {self}")
             self._stream = s
-            self.runtime.core.cuda_context_set_stream(self.context, s.cuda_stream)
+            wp.cuda_context_set_stream(self.context, s.cuda_stream)
         else:
             raise RuntimeError(f"Device {self} is not a CUDA device")
 
@@ -148,14 +149,14 @@ class Device:
 
     def make_current(self):
         if self.context is not None:
-            self.runtime.core.cuda_context_set_current(self.context)
+            wp.cuda_context_set_current(self.context)
 
     def can_access(self, other):
         other = self.runtime.get_device(other)
         if self.context == other.context:
             return True
         elif self.context is not None and other.context is not None:
-            return bool(self.runtime.core.cuda_context_can_access_peer(self.context, other.context))
+            return bool(wp.cuda_context_can_access_peer(self.context, other.context))
         else:
             return False
 

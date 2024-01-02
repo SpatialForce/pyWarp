@@ -23,7 +23,7 @@ class Stream:
         if "cuda_stream" in kwargs:
             self.cuda_stream = kwargs["cuda_stream"]
         else:
-            self.cuda_stream = device.runtime.core.cuda_stream_create(device.context)
+            self.cuda_stream = wp.cuda_stream_create(device.context)
             if not self.cuda_stream:
                 raise RuntimeError(f"Failed to create stream on device {device}")
             self.owner = True

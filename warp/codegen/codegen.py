@@ -1,10 +1,12 @@
 import ast
 import builtins
 import ctypes
-from typing import Mapping, Any, re
+import re
+from typing import Mapping, Any
+import warp_runtime_py as wp
 
 from warp.codegen.var import Var
-from warp.dsl.types import array, indexedarray, is_array
+from warp.dsl.types import array, indexedarray, is_array, float16, scalar_types
 
 
 class WarpCodegenError(RuntimeError):
@@ -299,7 +301,7 @@ def constant_str(value):
             # special case for float16, which is stored as uint16 in the ctypes.Array
             from warp.context import runtime
 
-            scalar_value = runtime.core.half_bits_to_float
+            scalar_value = wp.half_bits_to_float
         else:
             scalar_value = lambda x: x
 
@@ -314,7 +316,7 @@ def constant_str(value):
         # construct value from initializer array, e.g. wp::initializer_array<4,wp::float32>{1.0, 2.0, 3.0, 4.0}
         return f"{dtypestr}{{{', '.join(initlist)}}}"
 
-    elif value_type in warp.types.scalar_types:
+    elif value_type in scalar_types:
         # make sure we emit the value of objects, e.g. uint32
         return str(value.value)
 

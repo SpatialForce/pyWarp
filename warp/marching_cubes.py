@@ -1,4 +1,7 @@
 import ctypes
+import warp_runtime_py as wp
+
+from warp.dsl.types import vec3, array
 
 
 class MarchingCubes:
@@ -16,10 +19,10 @@ class MarchingCubes:
         self.max_tris = max_tris
 
         # bindings to warp.so
-        self.alloc = runtime.core.marching_cubes_create_device
+        self.alloc = wp.marching_cubes_create_device
         self.alloc.argtypes = [ctypes.c_void_p]
         self.alloc.restype = ctypes.c_uint64
-        self.free = runtime.core.marching_cubes_destroy_device
+        self.free = wp.marching_cubes_destroy_device
 
         from warp.context import zeros
 
@@ -48,9 +51,7 @@ class MarchingCubes:
         num_verts = ctypes.c_int(0)
         num_tris = ctypes.c_int(0)
 
-        runtime.core.marching_cubes_surface_device.restype = ctypes.c_int
-
-        error = runtime.core.marching_cubes_surface_device(
+        error = wp.marching_cubes_surface_device(
             self.id,
             ctypes.cast(field.ptr, ctypes.c_void_p),
             self.nx,
