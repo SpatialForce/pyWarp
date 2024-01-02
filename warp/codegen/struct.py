@@ -1,5 +1,6 @@
 import ctypes
 from struct import Struct, StructInstance
+from warp.codegen.codegen import make_full_qualified_name
 
 from warp.dsl.types import array, array_t, types_equal, type_repr, float_to_half_bits, half_bits_to_float, type_typestr
 
