@@ -1,7 +1,7 @@
 import ctypes
 import platform
 
-from warp import config
+from warp import config, build
 from warp.context import runtime
 from warp.device import Device, Devicelike
 import warp_runtime_py as wp
@@ -62,7 +62,7 @@ class Runtime:
             self.set_default_device("cpu")
 
         # initialize kernel cache
-        warp.build.init_kernel_cache(config.kernel_cache_dir)
+        build.init_kernel_cache(config.kernel_cache_dir)
 
         # print device and version information
         if not config.quiet:

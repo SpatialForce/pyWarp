@@ -1,8 +1,11 @@
 import ctypes
 from struct import Struct, StructInstance
-from warp.codegen.codegen import make_full_qualified_name
+from warp.codegen.codegen import make_full_qualified_name, get_annotations
+from warp.codegen.var import Var
 
-from warp.dsl.types import array, array_t, types_equal, type_repr, float_to_half_bits, half_bits_to_float, type_typestr
+from warp.dsl.types import array, array_t, types_equal, type_repr, float_to_half_bits, half_bits_to_float, type_typestr, \
+    float16
+from warp.function import Function
 
 
 def struct_instance_repr_recursive(inst: StructInstance, depth: int) -> str:
@@ -109,7 +112,7 @@ class StructInstance:
                     # assigning warp type value (e.g.: wp.float32)
                     value = value.value
                 # float16 needs conversion to uint16 bits
-                if var.type == warp.float16:
+                if var.type == float16:
                     setattr(self._ctype, name, float_to_half_bits(value))
                 else:
                     setattr(self._ctype, name, value)
@@ -149,7 +152,7 @@ class StructInstance:
                     npvalue.append([list(row) for row in value])
             else:
                 # scalar
-                if var.type == warp.float16:
+                if var.type == float16:
                     npvalue.append(half_bits_to_float(value))
                 else:
                     npvalue.append(value)
@@ -186,7 +189,7 @@ class Struct:
         self.ctype = StructType
 
         # create default constructor (zero-initialize)
-        self.default_constructor = warp.context.Function(
+        self.default_constructor = Function(
             func=None,
             key=self.key,
             namespace="",
@@ -199,7 +202,7 @@ class Struct:
         # build a constructor that takes each param as a value
         input_types = {label: var.type for label, var in self.vars.items()}
 
-        self.value_constructor = warp.context.Function(
+        self.value_constructor = Function(
             func=None,
             key=self.key,
             namespace="",
@@ -295,7 +298,7 @@ class Struct:
             else:
                 # scalar
                 cvalue = ctypes.cast(ptr + offset, ctypes.POINTER(var.type._type_)).contents
-                if var.type == warp.float16:
+                if var.type == float16:
                     setattr(instance, name, half_bits_to_float(cvalue))
                 else:
                     setattr(instance, name, cvalue.value)

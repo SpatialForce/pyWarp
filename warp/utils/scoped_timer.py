@@ -2,6 +2,8 @@
 import cProfile
 import timeit
 
+from warp.context import synchronize
+
 
 class ScopedTimer:
     indent = -1
@@ -51,7 +53,7 @@ class ScopedTimer:
     def __enter__(self):
         if self.active:
             if self.synchronize:
-                wp.synchronize()
+                synchronize()
 
             if self.use_nvtx:
                 import nvtx
@@ -72,7 +74,7 @@ class ScopedTimer:
     def __exit__(self, exc_type, exc_value, traceback):
         if self.active:
             if self.synchronize:
-                wp.synchronize()
+                synchronize()
 
             if self.use_nvtx:
                 import nvtx

@@ -9,6 +9,7 @@ import os
 import warp.config
 import warp_runtime_py as wp
 
+
 # builds cuda source to PTX or CUBIN using NVRTC (output type determined by output_path extension)
 def build_cuda(cu_path, arch, output_path, config="release", verify_fp=False, fast_math=False):
     with open(cu_path, "rb") as src_file:

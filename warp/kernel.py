@@ -1,3 +1,9 @@
+from warp.codegen.adjoint import Adjoint
+from warp.dsl import types
+from warp.module import get_module
+from copy import copy as shallowcopy
+
+
 class KernelHooks:
     def __init__(self, forward, backward):
         self.forward = forward
@@ -22,12 +28,12 @@ class Kernel:
 
         self.options = {} if options is None else options
 
-        self.adj = warp.codegen.Adjoint(func, transformers=code_transformers)
+        self.adj = Adjoint(func, transformers=code_transformers)
 
         # check if generic
         self.is_generic = False
         for arg_type in self.adj.arg_types.values():
-            if warp.types.type_is_generic(arg_type):
+            if types.type_is_generic(arg_type):
                 self.is_generic = True
                 break
 
@@ -51,7 +57,7 @@ class Kernel:
 
         arg_names = list(self.adj.arg_types.keys())
 
-        return warp.types.infer_argument_types(args, template_types, arg_names)
+        return types.infer_argument_types(args, template_types, arg_names)
 
     def add_overload(self, arg_types):
         if len(arg_types) != len(self.adj.arg_types):
@@ -62,8 +68,8 @@ class Kernel:
 
         # make sure all argument types are concrete and match the kernel parameters
         for i in range(len(arg_types)):
-            if not warp.types.type_matches_template(arg_types[i], template_types[i]):
-                if warp.types.type_is_generic(arg_types[i]):
+            if not types.type_matches_template(arg_types[i], template_types[i]):
+                if types.type_is_generic(arg_types[i]):
                     raise TypeError(
                         f"Kernel {self.key} argument '{arg_names[i]}' cannot be generic, got {arg_types[i]}"
                     )
@@ -73,7 +79,7 @@ class Kernel:
                     )
 
         # get a type signature from the given argument types
-        sig = warp.types.get_signature(arg_types, func_name=self.key)
+        sig = types.get_signature(arg_types, func_name=self.key)
         if sig in self.overloads:
             raise RuntimeError(
                 f"Duplicate overload for kernel {self.key}, an overload with the given arguments already exists"
@@ -83,7 +89,7 @@ class Kernel:
 
         # instantiate this kernel with the given argument types
         ovl = shallowcopy(self)
-        ovl.adj = warp.codegen.Adjoint(self.func, overload_annotations)
+        ovl.adj = Adjoint(self.func, overload_annotations)
         ovl.is_generic = False
         ovl.overloads = {}
         ovl.sig = sig
@@ -95,7 +101,7 @@ class Kernel:
         return ovl
 
     def get_overload(self, arg_types):
-        sig = warp.types.get_signature(arg_types, func_name=self.key)
+        sig = types.get_signature(arg_types, func_name=self.key)
 
         ovl = self.overloads.get(sig)
         if ovl is not None:

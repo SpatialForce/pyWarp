@@ -1,6 +1,7 @@
 import ctypes
 import warp_runtime_py as wp
 
+from warp.context import runtime
 from warp.dsl.types import vec3, array
 
 

@@ -18,6 +18,7 @@ from warp.dsl.types import type_is_generic, get_signature, types_equal, vector_t
     float_types, scalar_types, int_types, array, int32, float32, np_dtype_to_warp_type, vector, matrix, is_array, \
     float16, float_to_half_bits, launch_bounds_t, type_size_in_bytes, array_type_id, indexedarray
 from warp.event import Event
+from warp.fabric import fabricarray, indexedfabricarray
 from warp.function import Function, get_function_args
 from warp.graph import Graph
 from warp.kernel import Kernel

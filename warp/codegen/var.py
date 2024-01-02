@@ -1,7 +1,7 @@
 from warp.codegen.codegen import make_full_qualified_name
 from warp.codegen.reference import is_reference
 from warp.codegen.struct import Struct
-from warp.dsl.types import is_array
+from warp.dsl.types import is_array, float32, int32
 
 
 def compute_type_str(base_name, template_params):
