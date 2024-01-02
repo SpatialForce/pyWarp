@@ -159,6 +159,7 @@ class Device:
         else:
             return False
 
+
 """ Meta-type for arguments that can be resolved to a concrete Device.
 """
 Devicelike = Union[Device, str, None]
